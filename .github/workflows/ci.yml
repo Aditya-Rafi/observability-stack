@@ -1,0 +1,23 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  validate-compose:
+    name: Validate Docker Compose
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Siapkan .env dari contoh
+        run: cp .env.example .env
+
+      - name: Validasi konfigurasi compose gabungan
+        run: docker compose config --quiet
+
+      - name: Build image custom (Grafana)
+        run: docker compose build

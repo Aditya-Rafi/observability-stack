@@ -1,0 +1,295 @@
+// ============================================================
+// Alloy host: men-scrape Blackbox exporter (probe) lalu
+// remote_write hasilnya ke Mimir.
+//
+// Pola Blackbox: target sebenarnya ditaruh di __param_target,
+// __address__ dialihkan ke "blackbox:9115", metrics_path = /probe.
+// ============================================================
+logging {
+  level = "warn"
+}
+prometheus.remote_write "mimir" {
+  endpoint {
+    url = "http://mimir:9009/api/v1/push"
+    queue_config {
+      batch_send_deadline = "1s"
+    }
+  }
+  external_labels = {
+    source = "blackbox",
+  }
+}
+// ------------------------------------------------------------
+// 1) Probe HTTP  (kesehatan service berbasis HTTP)
+// ------------------------------------------------------------
+discovery.relabel "http" {
+  targets = [
+    // --- service di host 10.0.0.10 ---
+    { __address__ = "http://10.0.0.10:3000/api/health", name = "grafana",      group = "host-10.0.0.10" },
+    { __address__ = "http://10.0.0.10:9009/ready",      name = "mimir",        group = "host-10.0.0.10" },
+    { __address__ = "http://10.0.0.10:3100/ready",      name = "loki",         group = "host-10.0.0.10" },
+    { __address__ = "http://10.0.0.10:3200/ready",      name = "tempo",        group = "host-10.0.0.10" },
+    { __address__ = "http://10.0.0.10:9115",            name = "blackbox",     group = "host-10.0.0.10" },
+    // --- service di client 10.0.0.20 ---
+  //  { __address__ = "http://10.0.0.20:12345/-/ready",   name = "alloy-client", group = "client-10.0.0.20" },
+ //  { __address__ = "http://10.0.0.20:80",              name = "nginx",        group = "client-10.0.0.20" },
+  ]
+  rule {
+    source_labels = ["__address__"]
+    target_label  = "__param_target"
+  }
+  rule {
+    source_labels = ["__param_target"]
+    target_label  = "instance"
+  }
+  rule {
+    target_label = "__address__"
+    replacement  = "blackbox:9115"
+  }
+}
+prometheus.scrape "http" {
+  targets         = discovery.relabel.http.output
+  forward_to      = [prometheus.remote_write.mimir.receiver]
+  job_name        = "blackbox_http"
+  metrics_path    = "/probe"
+  params          = { module = ["http_2xx"] }
+  scrape_interval = "30s"
+}
+// ------------------------------------------------------------
+// 2) Probe TCP  (port terbuka untuk service non-HTTP)
+// ------------------------------------------------------------
+discovery.relabel "tcp" {
+  targets = [
+    // --- host 10.0.0.10 ---
+    { __address__ = "10.0.0.10:4317", name = "tempo-otlp-grpc",  group = "host-10.0.0.10" },
+    { __address__ = "10.0.0.10:4318", name = "tempo-otlp-http",  group = "host-10.0.0.10" },
+    // --- client 10.0.0.20 ---
+  //  { __address__ = "10.0.0.20:22",   name = "ssh",              group = "client-10.0.0.20" },
+  //  { __address__ = "10.0.0.20:4317", name = "alloy-otlp-grpc",  group = "client-10.0.0.20" },
+  //  { __address__ = "10.0.0.20:4318", name = "alloy-otlp-http",  group = "client-10.0.0.20" },
+  //  { __address__ = "10.0.0.20:80",   name = "nginx-port",       group = "client-10.0.0.20" },
+  //  { __address__ = "10.0.0.20:2377", name = "swarm-mgmt",       group = "client-10.0.0.20" },
+  //  { __address__ = "10.0.0.20:7946", name = "swarm-gossip",     group = "client-10.0.0.20" },
+  ]
+  rule {
+    source_labels = ["__address__"]
+    target_label  = "__param_target"
+  }
+  rule {
+    source_labels = ["__param_target"]
+    target_label  = "instance"
+  }
+  rule {
+    target_label = "__address__"
+    replacement  = "blackbox:9115"
+  }
+}
+prometheus.scrape "tcp" {
+  targets         = discovery.relabel.tcp.output
+  forward_to      = [prometheus.remote_write.mimir.receiver]
+  job_name        = "blackbox_tcp"
+  metrics_path    = "/probe"
+  params          = { module = ["tcp_connect"] }
+  scrape_interval = "30s"
+}
+// ------------------------------------------------------------
+// 3) Probe ICMP  (host hidup / mati)
+// ------------------------------------------------------------
+discovery.relabel "icmp" {
+  targets = [
+    { __address__ = "10.0.0.10", name = "host-server", group = "host-10.0.0.10" },
+  //  { __address__ = "10.0.0.20", name = "client",      group = "client-10.0.0.20" },
+  ]
+  rule {
+    source_labels = ["__address__"]
+    target_label  = "__param_target"
+  }
+  rule {
+    source_labels = ["__param_target"]
+    target_label  = "instance"
+  }
+  rule {
+    target_label = "__address__"
+    replacement  = "blackbox:9115"
+  }
+}
+prometheus.scrape "icmp" {
+  targets         = discovery.relabel.icmp.output
+  forward_to      = [prometheus.remote_write.mimir.receiver]
+  job_name        = "blackbox_icmp"
+  metrics_path    = "/probe"
+  params          = { module = ["icmp"] }
+  scrape_interval = "30s"
+}
+// ------------------------------------------------------------
+// 4) Metrik OS management host 10.0.0.10 (node_exporter)
+//    Membaca filesystem host yang di-mount ke container (lihat
+//    docker-compose.yml: /proc, /sys, / -> /host/...). Tujuannya
+//    agar CPU/RAM/DISK .168 ikut terpantau (cegah dashboard mati
+//    diam-diam karena disk penuh, dll).
+// ------------------------------------------------------------
+prometheus.exporter.unix "mgmt" {
+  procfs_path = "/host/proc"
+  sysfs_path  = "/host/sys"
+  rootfs_path = "/rootfs"
+  filesystem {
+    mount_points_exclude = "^/(dev|proc|sys|run|var/lib/docker/.+|rootfs/(dev|proc|sys|run))($|/)"
+    fs_types_exclude     = "^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|securityfs|selinuxfs|squashfs|sysfs|tracefs|tmpfs)$"
+  }
+}
+discovery.relabel "mgmt" {
+  targets = prometheus.exporter.unix.mgmt.targets
+  rule {
+    target_label = "instance"
+    replacement  = "10.0.0.10"
+  }
+  rule {
+    target_label = "host"
+    replacement  = "management-168"
+  }
+}
+prometheus.scrape "mgmt_node" {
+  targets         = discovery.relabel.mgmt.output
+  forward_to      = [prometheus.remote_write.mimir.receiver]
+  job_name        = "integrations/unix"
+  scrape_interval = "15s"
+}
+// ============================================================
+// 5) Probe ICMP jaringan kantor
+// ============================================================
+discovery.relabel "icmp_kantor" {
+  targets = [
+    { __address__ = "10.0.0.1",   name = "mikrotik-gw",         group = "jaringan-kantor" },
+    { __address__ = "10.0.100.1", name = "ont-provider",        group = "jaringan-kantor" },
+    { __address__ = "10.0.0.31", name = "ap-lt1",              group = "jaringan-kantor" },
+    { __address__ = "10.0.0.32", name = "ap-lt2",              group = "jaringan-kantor" },
+    { __address__ = "8.8.8.8",       name = "internet-google",     group = "jaringan-kantor" },
+    { __address__ = "1.1.1.1",       name = "internet-cloudflare", group = "jaringan-kantor" },
+  ]
+  rule {
+    source_labels = ["__address__"]
+    target_label  = "__param_target"
+  }
+  rule {
+    source_labels = ["__param_target"]
+    target_label  = "instance"
+  }
+  rule {
+    target_label = "__address__"
+    replacement  = "blackbox:9115"
+  }
+}
+prometheus.scrape "icmp_kantor" {
+  targets         = discovery.relabel.icmp_kantor.output
+  forward_to      = [prometheus.remote_write.mimir.receiver]
+  job_name        = "blackbox_icmp_kantor"
+  metrics_path    = "/probe"
+  params          = { module = ["icmp"] }
+  scrape_interval = "10s"
+}
+// ============================================================
+// 6) Metrik MikroTik via mktxp
+// ============================================================
+prometheus.scrape "mikrotik" {
+  targets = [
+    { __address__ = "mktxp:49090", instance = "10.0.0.1", group = "jaringan-kantor" },
+  ]
+  forward_to      = [prometheus.remote_write.mimir.receiver]
+  job_name        = "mikrotik"
+  scrape_interval = "15s"
+}
+// ============================================================
+// 7) Probe DNS & layanan bisnis
+//    Menangkap gangguan yang tidak terlihat oleh ICMP:
+//    DNS macet, sesi TCP baru gagal, layanan tidak terjangkau.
+// ============================================================
+discovery.relabel "dns_kantor" {
+  targets = [
+    { __address__ = "10.0.0.1",   name = "dns-mikrotik", group = "layanan-kantor" },
+    { __address__ = "10.0.100.1", name = "dns-ont",      group = "layanan-kantor" },
+    { __address__ = "1.1.1.1",       name = "dns-publik",   group = "layanan-kantor" },
+  ]
+  rule {
+    source_labels = ["__address__"]
+    target_label  = "__param_target"
+  }
+  rule {
+    source_labels = ["__param_target"]
+    target_label  = "instance"
+  }
+  rule {
+    target_label = "__address__"
+    replacement  = "blackbox:9115"
+  }
+}
+prometheus.scrape "dns_kantor" {
+  targets         = discovery.relabel.dns_kantor.output
+  forward_to      = [prometheus.remote_write.mimir.receiver]
+  job_name        = "blackbox_dns_kantor"
+  metrics_path    = "/probe"
+  params          = { module = ["dns_check"] }
+  scrape_interval = "15s"
+}
+discovery.relabel "layanan_kantor" {
+  targets = [
+    { __address__ = "https://www.google.com",            name = "web-google",   group = "layanan-kantor" },
+    { __address__ = "https://mail.example.org",      name = "webmail-b",  group = "layanan-kantor" },
+    { __address__ = "https://mail.example.com",      name = "webmail-a", group = "layanan-kantor" },
+  ]
+  rule {
+    source_labels = ["__address__"]
+    target_label  = "__param_target"
+  }
+  rule {
+    source_labels = ["__param_target"]
+    target_label  = "instance"
+  }
+  rule {
+    target_label = "__address__"
+    replacement  = "blackbox:9115"
+  }
+}
+prometheus.scrape "layanan_kantor" {
+  targets         = discovery.relabel.layanan_kantor.output
+  forward_to      = [prometheus.remote_write.mimir.receiver]
+  job_name        = "blackbox_layanan_kantor"
+  metrics_path    = "/probe"
+  params          = { module = ["http_2xx"] }
+  scrape_interval = "15s"
+}
+discovery.relabel "sesi_baru" {
+  targets = [
+    { __address__ = "1.1.1.1:443", name = "sesi-cloudflare", group = "layanan-kantor" },
+    { __address__ = "8.8.8.8:53",  name = "sesi-google-dns", group = "layanan-kantor" },
+  ]
+  rule {
+    source_labels = ["__address__"]
+    target_label  = "__param_target"
+  }
+  rule {
+    source_labels = ["__param_target"]
+    target_label  = "instance"
+  }
+  rule {
+    target_label = "__address__"
+    replacement  = "blackbox:9115"
+  }
+}
+prometheus.scrape "sesi_baru" {
+  targets         = discovery.relabel.sesi_baru.output
+  forward_to      = [prometheus.remote_write.mimir.receiver]
+  job_name        = "blackbox_sesi_baru"
+  metrics_path    = "/probe"
+  params          = { module = ["tcp_connect"] }
+  scrape_interval = "15s"
+}
+
+// === wifi_lantai (dipasang oleh install-wifi-lantai.sh) ===
+prometheus.scrape "wifi_lantai" {
+  targets         = [{"__address__" = "10.0.0.10:9817", "instance" = "pc-developer"}]
+  job_name        = "wifi_lantai"
+  scrape_interval = "10s"
+  scrape_timeout  = "5s"
+  forward_to      = [prometheus.remote_write.mimir.receiver]
+}
+// === akhir wifi_lantai ===

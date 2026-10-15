@@ -1,0 +1,78 @@
+{
+  "uid": "jaringan-kantor",
+  "title": "Jaringan Kantor",
+  "timezone": "Asia/Jakarta",
+  "schemaVersion": 39,
+  "refresh": "1m",
+  "time": { "from": "now-14d", "to": "now" },
+  "panels": [
+    {
+      "id": 1, "type": "stat", "title": "Ketersediaan Internet (7 hari)",
+      "gridPos": { "h": 5, "w": 8, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "mimir" },
+      "targets": [{ "refId": "A", "editorMode": "code", "expr": "avg_over_time(probe_success{instance=\"8.8.8.8\"}[7d]) * 100" }],
+      "fieldConfig": { "defaults": { "unit": "percent", "decimals": 2,
+        "thresholds": { "mode": "absolute", "steps": [
+          { "color": "red", "value": null }, { "color": "orange", "value": 99 }, { "color": "green", "value": 99.5 } ] } }, "overrides": [] }
+    },
+    {
+      "id": 2, "type": "stat", "title": "Latensi Rata-rata (24 jam)",
+      "gridPos": { "h": 5, "w": 8, "x": 8, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "mimir" },
+      "targets": [{ "refId": "A", "editorMode": "code", "expr": "avg_over_time(probe_duration_seconds{instance=\"8.8.8.8\"}[24h]) * 1000" }],
+      "fieldConfig": { "defaults": { "unit": "ms", "decimals": 1,
+        "thresholds": { "mode": "absolute", "steps": [
+          { "color": "green", "value": null }, { "color": "orange", "value": 20 }, { "color": "red", "value": 50 } ] } }, "overrides": [] }
+    },
+    {
+      "id": 3, "type": "stat", "title": "Packet Loss (1 jam)",
+      "gridPos": { "h": 5, "w": 8, "x": 16, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "mimir" },
+      "targets": [{ "refId": "A", "editorMode": "code", "expr": "(1 - avg_over_time(probe_success{instance=\"8.8.8.8\"}[1h])) * 100" }],
+      "fieldConfig": { "defaults": { "unit": "percent", "decimals": 2,
+        "thresholds": { "mode": "absolute", "steps": [
+          { "color": "green", "value": null }, { "color": "orange", "value": 1 }, { "color": "red", "value": 3 } ] } }, "overrides": [] }
+    },
+    {
+      "id": 4, "type": "timeseries", "title": "Latensi Semua Target (ms)",
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 5 },
+      "datasource": { "type": "prometheus", "uid": "mimir" },
+      "targets": [{ "refId": "A", "editorMode": "code", "legendFormat": "{{name}}",
+        "expr": "probe_duration_seconds{job=\"blackbox_icmp_kantor\"} * 1000" }],
+      "fieldConfig": { "defaults": { "unit": "ms",
+        "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 5, "showPoints": "never" } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] } }
+    },
+    {
+      "id": 5, "type": "timeseries", "title": "Packet Loss per Target (%)",
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "mimir" },
+      "targets": [{ "refId": "A", "editorMode": "code", "legendFormat": "{{name}}",
+        "expr": "(1 - avg_over_time(probe_success{job=\"blackbox_icmp_kantor\"}[10m])) * 100" }],
+      "fieldConfig": { "defaults": { "unit": "percent", "max": 100, "min": 0,
+        "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "showPoints": "never" } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] } }
+    },
+    {
+      "id": 6, "type": "timeseries", "title": "Pemakaian WAN ether1 (bps)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 23 },
+      "datasource": { "type": "prometheus", "uid": "mimir" },
+      "targets": [
+        { "refId": "A", "editorMode": "code", "legendFormat": "download", "expr": "rate(mktxp_interface_rx_byte_total{name=\"ether1\"}[5m]) * 8" },
+        { "refId": "B", "editorMode": "code", "legendFormat": "upload", "expr": "rate(mktxp_interface_tx_byte_total{name=\"ether1\"}[5m]) * 8" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "bps",
+        "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "showPoints": "never" } }, "overrides": [] }
+    },
+    {
+      "id": 7, "type": "timeseries", "title": "Paket Dibuang Queue (per detik)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 23 },
+      "datasource": { "type": "prometheus", "uid": "mimir" },
+      "targets": [{ "refId": "A", "editorMode": "code", "legendFormat": "{{name}}",
+        "expr": "rate(mktxp_queue_tree_dropped_total[5m])" }],
+      "fieldConfig": { "defaults": { "unit": "pps",
+        "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "showPoints": "never" } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] } }
+    }
+  ]
+}

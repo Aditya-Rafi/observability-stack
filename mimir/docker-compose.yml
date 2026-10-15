@@ -1,0 +1,21 @@
+services:
+  mimir:
+    image: ${MIMIR_IMAGE:-grafana/mimir:latest}
+    container_name: mimir
+    command:
+      - '-config.file=/etc/mimir/mimir.yml'
+    ports:
+      - "${MIMIR_PORT:-9009}:9009"
+    volumes:
+      - ./mimir.yml:/etc/mimir/mimir.yml:ro
+      - mimir-data:/data
+    restart: unless-stopped
+    networks:
+      - observability
+
+volumes:
+  mimir-data:
+
+networks:
+  observability:
+    name: observability

@@ -1,0 +1,30 @@
+# Root orchestrator untuk seluruh stack observability.
+#
+# Filosofi: tiap komponen tetap punya docker-compose.yml sendiri di subfolder-nya.
+# File ini TIDAK menggabungkan (merge) isinya, tetapi memakai fitur `include:`
+# Docker Compose v2 sehingga cukup SATU perintah dari root:
+#
+#   docker compose up -d --build
+#
+# Semua service jalan dalam satu project ("observability") dan satu network bersama,
+# sehingga Grafana bisa memanggil mimir/loki/tempo lewat nama service.
+
+name: observability
+
+include:
+  - path: mimir/docker-compose.yml
+    env_file: .env
+  - path: loki/docker-compose.yml
+    env_file: .env
+  - path: tempo/docker-compose.yml
+    env_file: .env
+  - path: grafana/docker-compose.yml
+    env_file: .env
+  - path: blackbox/docker-compose.yml
+    env_file: .env
+  - path: mktxp/docker-compose.yml
+    env_file: .env
+  - path: alloy/docker-compose.yml
+    env_file: .env
+  - path: alert-relay/docker-compose.yml
+    env_file: .env

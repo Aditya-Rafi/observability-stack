@@ -1,0 +1,19 @@
+services:
+  blackbox:
+    image: ${BLACKBOX_IMAGE:-prom/blackbox-exporter:v0.28.0}    # pin versi, jangan :latest
+    container_name: blackbox
+    command:
+      - '--config.file=/etc/blackbox/blackbox.yml'
+    ports:
+      - "${BLACKBOX_PORT:-9115}:9115"
+    volumes:
+      - ./blackbox.yml:/etc/blackbox/blackbox.yml:ro
+    cap_add:
+      - NET_RAW          # diperlukan untuk probe ICMP (ping)
+    restart: unless-stopped
+    networks:
+      - observability
+
+networks:
+  observability:
+    name: observability

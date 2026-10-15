@@ -1,0 +1,776 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: jaringan-kantor
+    folder: Observability Alerts
+    interval: 1m
+    rules:
+
+      - uid: net-internet-putus
+        title: 'Internet Kantor PUTUS'
+        condition: C
+        for: 2m
+        noDataState: Alerting
+        execErrState: Alerting
+        labels: {severity: critical, area: jaringan}
+        annotations:
+          summary: 'Internet kantor tidak bisa dijangkau sama sekali.'
+          tindakan: |
+            1. Cek apakah alert ONT Provider juga menyala. Kalau tidak, masalah di sisi provider
+            2. Cek lampu ONT dan kabel WAN ke ether1
+            3. Winbox: /system resource print
+        data:
+          - refId: A
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: mimir
+            model: {refId: A, editorMode: code, expr: 'probe_success{instance="8.8.8.8"}', instant: true, range: false, intervalMs: 1000, maxDataPoints: 43200}
+          - refId: B
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: __expr__
+            model: {refId: B, type: reduce, reducer: last, expression: A}
+          - refId: C
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: lt, params: [1]}
+
+      - uid: net-ont-putus
+        title: 'ONT Provider PUTUS'
+        condition: C
+        for: 2m
+        noDataState: Alerting
+        execErrState: Alerting
+        labels: {severity: critical, area: jaringan}
+        annotations:
+          summary: 'ONT provider 10.0.100.1 tidak merespons.'
+          tindakan: |
+            1. Cek lampu indikator ONT di ruang server
+            2. Restart ONT kalau lampu LOS merah
+            3. Hubungi provider kalau lampu normal tapi tetap mati
+        data:
+          - refId: A
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: mimir
+            model: {refId: A, editorMode: code, expr: 'probe_success{instance="10.0.100.1"}', instant: true, range: false, intervalMs: 1000, maxDataPoints: 43200}
+          - refId: B
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: __expr__
+            model: {refId: B, type: reduce, reducer: last, expression: A}
+          - refId: C
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: lt, params: [1]}
+
+      - uid: net-packet-loss
+        title: 'Packet Loss Internet Tinggi'
+        condition: C
+        for: 5m
+        noDataState: NoData
+        execErrState: Alerting
+        labels: {severity: warning, area: jaringan}
+        annotations:
+          summary: 'Packet loss ke internet di atas 3%. Normal 0%.'
+          tindakan: |
+            1. Cek apakah ONT ikut loss. Kalau ya, masalah di dalam kantor
+            2. Winbox: /queue tree print stats - lihat kolom dropped
+            3. Cek panel Pemakaian WAN, mungkin sedang penuh
+        data:
+          - refId: A
+            relativeTimeRange: {from: 1200, to: 0}
+            datasourceUid: mimir
+            model: {refId: A, editorMode: code, expr: 'avg_over_time(probe_success{instance="8.8.8.8"}[10m])', instant: true, range: false, intervalMs: 1000, maxDataPoints: 43200}
+          - refId: B
+            relativeTimeRange: {from: 1200, to: 0}
+            datasourceUid: __expr__
+            model: {refId: B, type: reduce, reducer: last, expression: A}
+          - refId: C
+            relativeTimeRange: {from: 1200, to: 0}
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: lt, params: [0.97]}
+
+      - uid: net-latensi-internet
+        title: 'Latensi Internet Tinggi'
+        condition: C
+        for: 5m
+        noDataState: NoData
+        execErrState: Alerting
+        labels: {severity: warning, area: jaringan}
+        annotations:
+          summary: 'Latensi ke internet di atas 100 ms. Normal sekitar 5 ms.'
+          tindakan: |
+            1. Winbox: /interface monitor-traffic ether1 duration=20
+            2. Cek panel Pemakaian WAN di Grafana
+            3. Kalau WAN penuh ini wajar. Kalau sepi, cek queue
+        data:
+          - refId: A
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: mimir
+            model: {refId: A, editorMode: code, expr: 'probe_duration_seconds{instance="8.8.8.8"}', instant: true, range: false, intervalMs: 1000, maxDataPoints: 43200}
+          - refId: B
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: __expr__
+            model: {refId: B, type: reduce, reducer: last, expression: A}
+          - refId: C
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: gt, params: [0.1]}
+
+      - uid: net-ap-bermasalah
+        title: 'Access Point Lambat'
+        condition: C
+        for: 5m
+        noDataState: NoData
+        execErrState: Alerting
+        labels: {severity: warning, area: jaringan}
+        annotations:
+          summary: 'AP {{ $labels.name }} ({{ $labels.instance }}) latensinya di atas 20 ms. Normal di bawah 2 ms.'
+          tindakan: |
+            1. Naik ke lantai terkait, cek LED port ethernet di Deco
+            2. Cabut-pasang kabel di kedua ujung
+            3. Ganti kabel kalau LED padam
+            4. Ukur ulang: /ping IP_AP count=30 - normal di bawah 2 ms
+        data:
+          - refId: A
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: mimir
+            model: {refId: A, editorMode: code, expr: 'probe_duration_seconds{group="jaringan-kantor", name=~"ap-lt.*"}', instant: true, range: false, intervalMs: 1000, maxDataPoints: 43200}
+          - refId: B
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: __expr__
+            model: {refId: B, type: reduce, reducer: last, expression: A}
+          - refId: C
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: gt, params: [0.02]}
+
+      - uid: net-queue-drop
+        title: 'Queue MikroTik Membuang Paket'
+        condition: C
+        for: 10m
+        noDataState: NoData
+        execErrState: OK
+        labels: {severity: warning, area: jaringan}
+        annotations:
+          summary: 'Queue membuang lebih dari 10% paket. Indikator sekunder - cek juga alert Packet Loss Internet.'
+          tindakan: |
+            1. Winbox: /queue tree print stats where !disabled
+            2. Bandingkan dropped dengan packets, wajar di bawah 1%
+            3. Kalau jauh di atas, naikkan limit-at queue tersebut
+        data:
+          - refId: A
+            relativeTimeRange: {from: 1200, to: 0}
+            datasourceUid: mimir
+            model: {refId: A, editorMode: code, expr: 'sum(rate(mktxp_queue_tree_dropped_total{name=~"(Browsing|Zoom|Youtube|Cloud)(Do|Up)"}[10m])) / (sum(rate(mktxp_queue_tree_bytes_total{name=~"(Browsing|Zoom|Youtube|Cloud)(Do|Up)"}[10m]))/1500) * 100', instant: true, range: false, intervalMs: 1000, maxDataPoints: 43200}
+          - refId: B
+            relativeTimeRange: {from: 1200, to: 0}
+            datasourceUid: __expr__
+            model: {refId: B, type: reduce, reducer: last, expression: A}
+          - refId: C
+            relativeTimeRange: {from: 1200, to: 0}
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: gt, params: [10]}
+
+      - uid: net-wan-penuh
+        title: 'Bandwidth WAN Hampir Penuh'
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: OK
+        labels: {severity: warning, area: jaringan}
+        annotations:
+          summary: 'Download WAN di atas 56 Mbps dari kapasitas 62 Mbps.'
+          tindakan: |
+            1. Winbox: /tool torch interface=LAN-Bridge - cari penyedot terbesar
+            2. Cek apakah ada yang sedang download besar
+            3. Kalau rutin tiap hari, pertimbangkan upgrade langganan
+        data:
+          - refId: A
+            relativeTimeRange: {from: 900, to: 0}
+            datasourceUid: mimir
+            model: {refId: A, editorMode: code, expr: 'rate(mktxp_interface_rx_byte_total{name="ether1"}[5m]) * 8 / 1000000', instant: true, range: false, intervalMs: 1000, maxDataPoints: 43200}
+          - refId: B
+            relativeTimeRange: {from: 900, to: 0}
+            datasourceUid: __expr__
+            model: {refId: B, type: reduce, reducer: last, expression: A}
+          - refId: C
+            relativeTimeRange: {from: 900, to: 0}
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: gt, params: [56]}
+
+  - orgId: 1
+    name: perangkat-kantor
+    folder: Observability Alerts
+    interval: 1m
+    rules:
+
+      - uid: dev-ap-menyimpang
+        title: 'AP Menyimpang dari Rekannya'
+        condition: C
+        for: 15m
+        noDataState: NoData
+        execErrState: OK
+        labels: {severity: warning, area: perangkat}
+        annotations:
+          summary: 'AP {{ $labels.name }} 3x lebih lambat dari rata-rata AP lain. Tanda awal perangkat atau kabel mulai rusak.'
+          tindakan: |
+            1. Bandingkan: /ping IP_AP count=30 dengan AP lain
+            2. Cek LED port ethernet di AP tersebut
+            3. Ganti kabel kalau selisihnya bertahan
+            4. Tukar posisi dengan AP lain untuk memastikan perangkat atau jalurnya
+        data:
+          - refId: A
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: mimir
+            model: {refId: A, editorMode: code, expr: 'probe_duration_seconds{name=~"ap-lt.*"} / scalar(avg(probe_duration_seconds{name=~"ap-lt.*"}))', instant: true, range: false, intervalMs: 1000, maxDataPoints: 43200}
+          - refId: B
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: __expr__
+            model: {refId: B, type: reduce, reducer: last, expression: A}
+          - refId: C
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: gt, params: [3]}
+
+      - uid: dev-ap-tidak-stabil
+        title: 'AP Tidak Stabil'
+        condition: C
+        for: 15m
+        noDataState: NoData
+        execErrState: OK
+        labels: {severity: warning, area: perangkat}
+        annotations:
+          summary: 'AP {{ $labels.name }} latensi median di atas 10 ms. Normal di bawah 2 ms. Lonjakan sesaat diabaikan, jadi ini perlambatan yang bertahan.'
+          tindakan: |
+            1. Latensi rata-rata bisa terlihat normal, tapi sebarannya liar
+            2. Cek kabel dan konektor lebih dulu
+            3. Kalau kabel bagus, kemungkinan perangkatnya mulai rusak
+        data:
+          - refId: A
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: mimir
+            model: {refId: A, editorMode: code, expr: 'quantile_over_time(0.5, probe_duration_seconds{name=~"ap-lt.*"}[30m])*1000', instant: true, range: false, intervalMs: 1000, maxDataPoints: 43200}
+          - refId: B
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: __expr__
+            model: {refId: B, type: reduce, reducer: last, expression: A}
+          - refId: C
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: gt, params: [10]}
+
+      - uid: dev-rtr-cpu
+        title: 'CPU Router Tinggi'
+        condition: C
+        for: 10m
+        noDataState: NoData
+        execErrState: OK
+        labels: {severity: warning, area: perangkat}
+        annotations:
+          summary: 'CPU MikroTik di atas 70%. Normal di bawah 20%.'
+          tindakan: |
+            1. Winbox: /tool profile duration=10 - lihat proses apa yang berat
+            2. Cek /ip firewall connection print count-only
+            3. Cek apakah ada broadcast storm di /interface print stats
+        data:
+          - refId: A
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: mimir
+            model: {refId: A, editorMode: code, expr: 'mktxp_system_cpu_load', instant: true, range: false, intervalMs: 1000, maxDataPoints: 43200}
+          - refId: B
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: __expr__
+            model: {refId: B, type: reduce, reducer: last, expression: A}
+          - refId: C
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: gt, params: [70]}
+
+      - uid: dev-rtr-ram
+        title: 'RAM Router Menipis'
+        condition: C
+        for: 15m
+        noDataState: NoData
+        execErrState: OK
+        labels: {severity: warning, area: perangkat}
+        annotations:
+          summary: 'RAM bebas MikroTik di bawah 40 MB dari total 256 MB.'
+          tindakan: |
+            1. Winbox: /system resource print
+            2. Cek jumlah connection tracking
+            3. Reboot terjadwal kalau terus menurun - kemungkinan kebocoran memori
+        data:
+          - refId: A
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: mimir
+            model: {refId: A, editorMode: code, expr: 'mktxp_system_free_memory', instant: true, range: false, intervalMs: 1000, maxDataPoints: 43200}
+          - refId: B
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: __expr__
+            model: {refId: B, type: reduce, reducer: last, expression: A}
+          - refId: C
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: lt, params: [40000000]}
+
+      - uid: dev-rtr-flash
+        title: 'Flash Router Kritis'
+        condition: C
+        for: 30m
+        noDataState: NoData
+        execErrState: OK
+        labels: {severity: critical, area: perangkat}
+        annotations:
+          summary: 'Flash MikroTik tersisa di bawah 1 MB. Perubahan konfigurasi bisa gagal tersimpan diam-diam.'
+          tindakan: |
+            1. Winbox: /file print - cari file besar
+            2. Hapus backup lama setelah disalin ke PC
+            3. Cek /system logging - pastikan tidak ada action=disk
+        data:
+          - refId: A
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: mimir
+            model: {refId: A, editorMode: code, expr: 'mktxp_system_free_hdd_space', instant: true, range: false, intervalMs: 1000, maxDataPoints: 43200}
+          - refId: B
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: __expr__
+            model: {refId: B, type: reduce, reducer: last, expression: A}
+          - refId: C
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: lt, params: [1000000]}
+
+      - uid: dev-rtr-restart
+        title: 'Router Baru Restart'
+        condition: C
+        for: 1m
+        noDataState: NoData
+        execErrState: OK
+        labels: {severity: critical, area: perangkat}
+        annotations:
+          summary: 'MikroTik baru menyala kurang dari 10 menit. Kalau tidak direncanakan, berarti crash atau listrik padam.'
+          tindakan: |
+            1. Winbox: /log print - cari penyebab
+            2. Cek /system resource print untuk flash dan memori
+            3. Pastikan konfigurasi masih utuh: /queue tree print, /ip firewall filter print
+        data:
+          - refId: A
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: mimir
+            model: {refId: A, editorMode: code, expr: 'mktxp_system_uptime', instant: true, range: false, intervalMs: 1000, maxDataPoints: 43200}
+          - refId: B
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: __expr__
+            model: {refId: B, type: reduce, reducer: last, expression: A}
+          - refId: C
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: lt, params: [600]}
+
+      - uid: dev-rtr-error-if
+        title: 'Error Interface Muncul'
+        condition: C
+        for: 10m
+        noDataState: NoData
+        execErrState: OK
+        labels: {severity: warning, area: perangkat}
+        annotations:
+          summary: 'Interface router mulai mencatat error. Sebelumnya selalu nol. Tanda paling awal kabel atau port mulai rusak.'
+          tindakan: |
+            1. Winbox: /interface print stats - cari kolom RX-ERROR dan TX-ERROR
+            2. Periksa fisik kabel pada port tersebut
+            3. Ganti kabel atau pindah port
+        data:
+          - refId: A
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: mimir
+            model: {refId: A, editorMode: code, expr: 'sum(rate(mktxp_interface_rx_error_total[15m])) + sum(rate(mktxp_interface_tx_error_total[15m]))', instant: true, range: false, intervalMs: 1000, maxDataPoints: 43200}
+          - refId: B
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: __expr__
+            model: {refId: B, type: reduce, reducer: last, expression: A}
+          - refId: C
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: gt, params: [0]}
+
+      - uid: dev-rtr-link-lambat
+        title: 'Kecepatan Link Turun'
+        condition: C
+        for: 10m
+        noDataState: NoData
+        execErrState: OK
+        labels: {severity: warning, area: perangkat}
+        annotations:
+          summary: 'Kecepatan negosiasi link turun di bawah 100 Mbps. Biasanya kabel rusak sebagian.'
+          tindakan: |
+            1. Winbox: /interface ethernet monitor ether1 once
+            2. Bandingkan rate dengan link-partner-advertising
+            3. Ganti kabel - biasanya satu pasang kawat putus
+        data:
+          - refId: A
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: mimir
+            model: {refId: A, editorMode: code, expr: 'min(mktxp_interface_rate{name=~"ether1|ether4"})', instant: true, range: false, intervalMs: 1000, maxDataPoints: 43200}
+          - refId: B
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: __expr__
+            model: {refId: B, type: reduce, reducer: last, expression: A}
+          - refId: C
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: lt, params: [100]}
+
+      - uid: dev-rtr-link-flap
+        title: 'Link Sering Putus'
+        condition: C
+        for: 5m
+        noDataState: NoData
+        execErrState: OK
+        labels: {severity: warning, area: perangkat}
+        annotations:
+          summary: 'Ada port yang putus-sambung lebih dari 2 kali dalam sejam.'
+          tindakan: |
+            1. Winbox: /interface print stats
+            2. Periksa konektor di kedua ujung
+            3. Ganti kabel
+        data:
+          - refId: A
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: mimir
+            model: {refId: A, editorMode: code, expr: 'max(increase(mktxp_link_downs_total{name!="VPN-PRITUNL"}[1h]))', instant: true, range: false, intervalMs: 1000, maxDataPoints: 43200}
+          - refId: B
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: __expr__
+            model: {refId: B, type: reduce, reducer: last, expression: A}
+          - refId: C
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: gt, params: [2]}
+
+  - orgId: 1
+    name: peringatan-dini
+    folder: Observability Alerts
+    interval: 10s
+    rules:
+
+      - uid: dini-jitter
+        title: 'DINI - Jitter Internet Naik'
+        condition: C
+        for: 1m
+        noDataState: OK
+        execErrState: OK
+        labels: {severity: dini, area: peringatan-dini}
+        annotations:
+          summary: 'Jitter ke internet di atas 8 ms. Normal di bawah 2 ms.'
+          artinya: 'Video call dan rapat online bisa mulai patah-patah dalam beberapa menit.'
+          tindakan: |
+            1. Cek panel Pemakaian WAN - mungkin mulai ramai
+            2. Winbox: /tool torch interface=LAN-Bridge
+            3. Tanya 1-2 orang apakah sudah terasa
+        data:
+          - refId: A
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: mimir
+            model: {refId: A, editorMode: code, expr: 'stddev_over_time(probe_duration_seconds{name="internet-google"}[2m]) * 1000', instant: true, range: false, intervalMs: 1000, maxDataPoints: 43200}
+          - refId: B
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: __expr__
+            model: {refId: B, type: reduce, reducer: last, expression: A}
+          - refId: C
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: gt, params: [8]}
+
+      - uid: dini-latensi-relatif
+        title: 'DINI - Latensi Naik dari Kebiasaan'
+        condition: C
+        for: 1m
+        noDataState: OK
+        execErrState: OK
+        labels: {severity: dini, area: peringatan-dini}
+        annotations:
+          summary: 'Latensi internet 2,5x lebih buruk dari rata-rata satu jam terakhir.'
+          artinya: 'Perlambatan relatif. Belum tentu terasa, tapi arahnya memburuk.'
+          tindakan: |
+            1. Cek apakah WAN sedang ramai
+            2. Cek apakah ONT ikut melambat
+            3. Amati 5 menit - kalau terus naik, siap-siap
+        data:
+          - refId: A
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: mimir
+            model: {refId: A, editorMode: code, expr: 'probe_duration_seconds{name="internet-google"} / avg_over_time(probe_duration_seconds{name="internet-google"}[1h])', instant: true, range: false, intervalMs: 1000, maxDataPoints: 43200}
+          - refId: B
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: __expr__
+            model: {refId: B, type: reduce, reducer: last, expression: A}
+          - refId: C
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: gt, params: [2.5]}
+
+      - uid: dini-wan-65
+        title: 'DINI - WAN Menyentuh 65 Persen'
+        condition: C
+        for: 1m
+        noDataState: OK
+        execErrState: OK
+        labels: {severity: dini, area: peringatan-dini}
+        annotations:
+          summary: 'Download WAN di atas 40 Mbps dari kapasitas 62 Mbps.'
+          artinya: 'Masih aman, tapi kalau naik terus pengguna akan mulai merasakan lambat.'
+          tindakan: |
+            1. Winbox: /tool torch interface=LAN-Bridge - cari penyedot SEKARANG
+            2. Selagi masih berlangsung, bukan setelah lewat
+            3. Catat IP-nya di catatan harian
+        data:
+          - refId: A
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: mimir
+            model: {refId: A, editorMode: code, expr: 'rate(mktxp_interface_rx_byte_total{name="ether1"}[1m]) * 8 / 1000000', instant: true, range: false, intervalMs: 1000, maxDataPoints: 43200}
+          - refId: B
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: __expr__
+            model: {refId: B, type: reduce, reducer: last, expression: A}
+          - refId: C
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: gt, params: [40]}
+
+      - uid: dini-bufferbloat
+        title: 'DINI - Lag Saat Jaringan Ramai'
+        condition: C
+        for: 1m
+        noDataState: OK
+        execErrState: OK
+        labels: {severity: dini, area: peringatan-dini}
+        annotations:
+          summary: 'Latensi naik BERSAMAAN dengan WAN yang sedang ramai. Ini yang dirasakan pengguna sebagai lag.'
+          artinya: 'Inilah kombinasi yang membuat orang mengeluh. Bertindak sekarang sebelum keluhan masuk.'
+          tindakan: |
+            1. Winbox: /tool torch interface=LAN-Bridge - cari penyedot terbesar
+            2. Kalau satu IP menyedot besar, batasi sementara
+            3. Kalau merata, memang kapasitas kurang
+        data:
+          - refId: A
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: mimir
+            model: {refId: A, editorMode: code, expr: '(probe_duration_seconds{name="internet-google"} * 1000 > 15) and on() (rate(mktxp_interface_rx_byte_total{name="ether1"}[1m]) * 8 / 1000000 > 30)', instant: true, range: false, intervalMs: 1000, maxDataPoints: 43200}
+          - refId: B
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: __expr__
+            model: {refId: B, type: reduce, reducer: last, expression: A}
+          - refId: C
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: gt, params: [0]}
+
+  - orgId: 1
+    name: layanan-bisnis
+    folder: Observability Alerts
+    interval: 10s
+    rules:
+
+      - uid: svc-dns-gagal
+        title: 'DNS GAGAL - Jaringan Terlihat Sehat'
+        condition: C
+        for: 1m
+        noDataState: NoData
+        execErrState: OK
+        labels: {severity: critical, area: layanan}
+        annotations:
+          summary: 'DNS tidak menjawab padahal ping ke internet normal. Karyawan tidak bisa membuka apa pun.'
+          artinya: 'INILAH pola gangguan 16 September 09.20. Ping hijau, orang tidak bisa kerja.'
+          tindakan: |
+            1. Winbox: /ip dns print - cek cache-used dan dynamic-servers
+            2. Dari PC: dig @10.0.0.1 google.com
+            3. Kalau MikroTik macet: /ip dns cache flush
+            4. Cek panel DNS untuk tahu server mana yang gagal
+        data:
+          - refId: A
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: mimir
+            model: {refId: A, editorMode: code, expr: 'min(probe_success{job="blackbox_dns_kantor"}) and on() (probe_success{name="internet-google"} == 1)', instant: true, range: false, intervalMs: 1000, maxDataPoints: 43200}
+          - refId: B
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: __expr__
+            model: {refId: B, type: reduce, reducer: last, expression: A}
+          - refId: C
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: lt, params: [1]}
+
+      - uid: svc-sesi-gagal
+        title: 'Sesi Baru Gagal - Ping Masih Jalan'
+        condition: C
+        for: 1m
+        noDataState: NoData
+        execErrState: OK
+        labels: {severity: critical, area: layanan}
+        annotations:
+          summary: 'Koneksi TCP baru tidak bisa dibuka padahal ICMP lolos. Tanda tabel sesi NAT penuh.'
+          artinya: 'Halaman baru tidak mau terbuka walau yang sudah jalan tetap normal.'
+          tindakan: |
+            1. Winbox: /ip firewall connection print count-only
+            2. Kalau di bawah 5000, masalahnya di ONT bukan MikroTik
+            3. Restart ONT - tapi tangkap bukti dulu: ~/tangkap-bukti.sh
+        data:
+          - refId: A
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: mimir
+            model: {refId: A, editorMode: code, expr: 'min(probe_success{job="blackbox_sesi_baru"}) and on() (probe_success{name="internet-google"} == 1)', instant: true, range: false, intervalMs: 1000, maxDataPoints: 43200}
+          - refId: B
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: __expr__
+            model: {refId: B, type: reduce, reducer: last, expression: A}
+          - refId: C
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: lt, params: [1]}
+
+      - uid: svc-layanan-mati
+        title: 'Layanan Kantor Tidak Terjangkau'
+        condition: C
+        for: 2m
+        noDataState: NoData
+        execErrState: OK
+        labels: {severity: warning, area: layanan}
+        annotations:
+          summary: 'Salah satu layanan (webmail atau web) tidak bisa dibuka.'
+          artinya: 'Cek dulu apakah hanya satu layanan atau semuanya. Satu layanan = masalah di sisi penyedia.'
+          tindakan: |
+            1. Buka panel Layanan Kantor - lihat mana yang merah
+            2. Kalau hanya webmail, hubungi penyedia hosting
+            3. Kalau semua, cek DNS lebih dulu
+        data:
+          - refId: A
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: mimir
+            model: {refId: A, editorMode: code, expr: 'min(probe_success{job="blackbox_layanan_kantor"})', instant: true, range: false, intervalMs: 1000, maxDataPoints: 43200}
+          - refId: B
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: __expr__
+            model: {refId: B, type: reduce, reducer: last, expression: A}
+          - refId: C
+            relativeTimeRange: {from: 3600, to: 0}
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: lt, params: [1]}
+
+deleteRules:
+  - orgId: 1
+    uid: service-node-down

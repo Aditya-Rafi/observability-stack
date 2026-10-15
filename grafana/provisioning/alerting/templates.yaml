@@ -1,0 +1,44 @@
+apiVersion: 1
+templates:
+  - orgId: 1
+    name: telegram.message
+    template: |
+      {{ define "telegram.message" }}
+      {{- if eq .Status "firing" }}
+      {{- if eq .CommonLabels.severity "dini" }}⚠️ <b>PERINGATAN DINI</b>
+      <i>Jaringan mulai memburuk. Pengguna kemungkinan BELUM merasakan.</i>
+      {{- else }}🔴 <b>MASALAH JARINGAN TERDETEKSI</b>
+      {{- end }}
+      {{- else }}
+      {{- if eq .CommonLabels.severity "dini" }}🟢 <b>PERINGATAN DINI BERAKHIR</b>
+      {{- else }}✅ <b>SUDAH KEMBALI NORMAL</b>
+      {{- end }}
+      {{- end }}
+      {{ range .Alerts }}
+      ━━━━━━━━━━━━━━━━━━
+      <b>JENIS</b>
+      {{ .Labels.alertname }}{{ if .Labels.severity }} · {{ .Labels.severity }}{{ end }}
+
+      <b>PERANGKAT</b>
+      {{ if .Labels.name }}{{ .Labels.name }}{{ else }}-{{ end }}{{ if .Labels.instance }} ({{ .Labels.instance }}){{ end }}
+
+      <b>PENYEBAB</b>
+      {{ if .Annotations.summary }}{{ .Annotations.summary }}{{ else }}Tidak ada keterangan.{{ end }}
+      {{- if .Annotations.artinya }}
+
+      <b>ARTINYA</b>
+      {{ .Annotations.artinya }}
+      {{- end }}
+      {{- if .Annotations.tindakan }}
+
+      <b>TINDAKAN</b>
+      {{ .Annotations.tindakan }}
+      {{- end }}
+
+      <b>DATA UKUR</b>
+      <code>{{ if .Values.B }}{{ printf "%.2f" .Values.B }}{{ else }}-{{ end }}</code>
+
+      <b>WAKTU</b>
+      {{ .StartsAt.Format "02 Jan 2006 15:04:05" }} UTC (WIB = +7 jam)
+      {{ end }}
+      {{ end }}

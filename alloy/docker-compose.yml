@@ -1,0 +1,31 @@
+services:
+  alloy:
+    image: ${ALLOY_IMAGE:-grafana/alloy:v1.16.3}
+    container_name: alloy
+    command:
+      - 'run'
+      - '--server.http.listen-addr=0.0.0.0:12345'
+      - '--storage.path=/var/lib/alloy/data'
+      - '/etc/alloy/config.alloy'
+    ports:
+      - "${ALLOY_PORT:-12345}:12345"     # UI Alloy host
+    volumes:
+      - ./config.alloy:/etc/alloy/config.alloy:ro
+      - alloy-data:/var/lib/alloy/data
+      # Akses filesystem host .168 untuk node_exporter (CPU/RAM/disk host)
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    depends_on:
+      - blackbox
+      - mimir
+    restart: unless-stopped
+    networks:
+      - observability
+
+volumes:
+  alloy-data:
+
+networks:
+  observability:
+    name: observability

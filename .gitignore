@@ -1,0 +1,22 @@
+# Kredensial & konfigurasi lokal
+.env
+
+# Data persisten / dump lokal (volume diatur Docker, ini jaga-jaga bila ada bind mount)
+**/data/
+data/
+
+# Log
+*.log
+logs/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Kredensial router & artefak
+mktxp/conf/
+.zip
+*.bak-*

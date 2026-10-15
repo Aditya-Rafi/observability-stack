@@ -1,0 +1,15 @@
+services:
+  mktxp:
+    image: ghcr.io/akpw/mktxp:latest
+    container_name: mktxp
+    restart: unless-stopped
+    volumes:
+      - ./conf:/etc/mktxp
+    ports:
+      - "127.0.0.1:49090:49090"
+    networks:
+      - observability
+
+networks:
+  observability:
+    name: observability
