@@ -233,8 +233,8 @@ prometheus.scrape "dns_kantor" {
 discovery.relabel "layanan_kantor" {
   targets = [
     { __address__ = "https://www.google.com",            name = "web-google",   group = "layanan-kantor" },
-    { __address__ = "https://mail.example.org",      name = "webmail-b",  group = "layanan-kantor" },
-    { __address__ = "https://mail.example.com",      name = "webmail-a", group = "layanan-kantor" },
+    { __address__ = "https://mail.example.com",      name = "webmail-a",  group = "layanan-kantor" },
+    { __address__ = "https://mail.example.org",      name = "webmail-b", group = "layanan-kantor" },
   ]
   rule {
     source_labels = ["__address__"]
